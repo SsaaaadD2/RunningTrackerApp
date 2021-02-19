@@ -33,7 +33,7 @@ interface RunDAO {
     @Query("SELECT * FROM running_table ORDER BY caloriesBurnt DESC")
     fun getAllRunsByCalories(): LiveData<List<Run>>
 
-    
+
     /**
      * Queries to return the totals of each variable, and the total average for speed
      *
