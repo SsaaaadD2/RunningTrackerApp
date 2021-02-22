@@ -1,7 +1,8 @@
-package com.saadm.runningtracker
+package com.saadm.runningtracker.ui
 
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import com.saadm.runningtracker.R
 import com.saadm.runningtracker.db.RunDAO
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
