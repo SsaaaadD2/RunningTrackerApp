@@ -82,10 +82,11 @@ class TrackingService: LifecycleService() {
                         isFirstRun = false
                     } else {
                         Timber.d("Resuming service")
+                        startForegroundService()
                     }
                 }
                 ACTION_PAUSE_SERVICE -> {
-                    Timber.d("Paused service")
+                    pauseService()
                 }
                 ACTION_STOP_SERVICE -> {
                     Timber.d("Stopped service")
@@ -103,6 +104,10 @@ class TrackingService: LifecycleService() {
         pathPoints.postValue(this)
     //The question mark here is what to do if the value was null
     } ?: pathPoints.postValue(mutableListOf(mutableListOf()))
+
+    private fun pauseService(){
+        isTracking.postValue(false)
+    }
 
 
     //We can suppress this warning, the warning is that we need to do a permission check
