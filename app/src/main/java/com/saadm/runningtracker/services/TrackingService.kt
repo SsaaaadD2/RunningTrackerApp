@@ -38,6 +38,8 @@ import com.saadm.runningtracker.ui.MainActivity
 import pub.devrel.easypermissions.EasyPermissions
 import timber.log.Timber
 
+//We use a list of lists, in case there is a break in tracking, we need to join the paths of coordinates
+//Each path is a list of coordinates, but for several paths, there will be a list of paths
 typealias Polyline = MutableList<LatLng>
 typealias Polylines = MutableList<Polyline>
 
