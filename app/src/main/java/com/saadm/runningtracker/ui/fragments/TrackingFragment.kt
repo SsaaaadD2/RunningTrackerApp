@@ -33,6 +33,8 @@ class TrackingFragment: Fragment(R.layout.fragment_tracking) {
     }
 
     private fun sendCommandToService(action: String){
+		//The .also just specifies that you should do something else with the object that is created
+		//Should be used as part of object construction in a chain, as it is done below
         Intent(requireContext(),TrackingService::class.java).also {
             it.action = action
             //Does not actually start the service each time you call this function
