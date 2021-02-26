@@ -18,6 +18,8 @@ object Constants {
     const val POLYLINE_WIDTH = 8f
     const val MAP_ZOOM = 15f
 
+    const val TIMER_UPDATE_INTERVAL = 50L
+
     const val NOTIFICATION_CHANNEL_NAME = "Tracking App"
     const val NOTIFICATION_CHANNEL_ID= "running_tracker"
     const val NOTIFICATION_ID= 30

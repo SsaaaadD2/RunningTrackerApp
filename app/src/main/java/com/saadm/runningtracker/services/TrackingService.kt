@@ -1,17 +1,18 @@
 package com.saadm.runningtracker.services
 
 import android.annotation.SuppressLint
-import android.app.Activity
-import android.app.NotificationChannel
-import android.app.NotificationManager
+import android.app.*
 import android.app.NotificationManager.IMPORTANCE_LOW
-import android.app.PendingIntent
 import android.app.PendingIntent.FLAG_UPDATE_CURRENT
 import android.content.Context
+import android.content.DialogInterface
 import android.content.Intent
 import android.location.Location
+import android.location.LocationManager
 import android.os.Build
 import android.os.Looper
+import android.provider.Settings
+import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
@@ -33,8 +34,14 @@ import com.saadm.runningtracker.other.Constants.LOCATION_UPDATE_INTERVAL
 import com.saadm.runningtracker.other.Constants.NOTIFICATION_CHANNEL_ID
 import com.saadm.runningtracker.other.Constants.NOTIFICATION_CHANNEL_NAME
 import com.saadm.runningtracker.other.Constants.NOTIFICATION_ID
+import com.saadm.runningtracker.other.Constants.TIMER_UPDATE_INTERVAL
 import com.saadm.runningtracker.other.TrackingUtility
 import com.saadm.runningtracker.ui.MainActivity
+import com.saadm.runningtracker.ui.fragments.TrackingFragment
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import pub.devrel.easypermissions.EasyPermissions
 import timber.log.Timber
 
@@ -46,10 +53,20 @@ typealias Polylines = MutableList<Polyline>
 class TrackingService: LifecycleService() {
 
     var isFirstRun: Boolean = true
+    private var isTimerEnabled: Boolean = false
+    private var lapTime: Long = 0L  //If timer is paused and resumed, we start again from 0, we don't continue
+    private var totalTimeRun: Long = 0L
+    private var timeStarted:Long = 0L
+    private var lastSecondTimeStamp: Long = 0L
 
     lateinit var fusedLocationProviderClient: FusedLocationProviderClient
 
+    //This LiveData is only used by this class, so we don't need companion object
+    private val timeRunInSeconds = MutableLiveData<Long>()
+
+    //These LiveData we want to observe from outside the class, so we use companion object
     companion object{
+        val timeRunInMillis = MutableLiveData<Long>()
         val isTracking = MutableLiveData<Boolean>()
         val pathPoints = MutableLiveData<Polylines>()
     }
@@ -58,6 +75,8 @@ class TrackingService: LifecycleService() {
     private fun postInitialValues(){
         isTracking.postValue(false)
         pathPoints.postValue(mutableListOf())
+        timeRunInMillis.postValue(0L)
+        timeRunInSeconds.postValue(0L)
     }
 
     override fun onCreate() {
@@ -71,6 +90,7 @@ class TrackingService: LifecycleService() {
         })
     }
 
+
     //Called when an Intent is sent to this service
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 		//.let is usually used for value conversions
@@ -82,7 +102,7 @@ class TrackingService: LifecycleService() {
                         isFirstRun = false
                     } else {
                         Timber.d("Resuming service")
-                        startForegroundService()
+                        startTimer()
                     }
                 }
                 ACTION_PAUSE_SERVICE -> {
@@ -96,6 +116,7 @@ class TrackingService: LifecycleService() {
         return super.onStartCommand(intent, flags, startId)
     }
 
+
     //If value is not null, it will do the apply thing
     //If it is null, it will do the stuff after the question mark
     private fun addEmptyPolyline() = pathPoints.value?.apply{
@@ -105,8 +126,38 @@ class TrackingService: LifecycleService() {
     //The question mark here is what to do if the value was null
     } ?: pathPoints.postValue(mutableListOf(mutableListOf()))
 
+
+    //Called whenever we start or resume service
+    //As opposed to startForegroundService() which is only called on start, not resume
+    private fun startTimer(){
+        addEmptyPolyline()
+        isTracking.postValue(true)
+        timeStarted = System.currentTimeMillis()
+        isTimerEnabled = true
+        CoroutineScope(Dispatchers.Main).launch {
+            while(isTracking.value!!){
+                //Time difference between now and time started
+                lapTime = System.currentTimeMillis() - timeStarted
+
+                //post new lap time
+                timeRunInMillis.postValue(totalTimeRun + lapTime)
+
+                //If a full second has passed since the last second, update the time run in seconds
+                if(timeRunInMillis.value!! >= lastSecondTimeStamp + 1000L){
+                    timeRunInSeconds.postValue(timeRunInSeconds.value!! + 1)
+                    lastSecondTimeStamp += 1000L
+                }
+                delay(TIMER_UPDATE_INTERVAL)
+            }
+            //We come here once we are no longer tracking/paused i.e. the lap is complete
+            totalTimeRun += lapTime
+        }
+    }
+
+
     private fun pauseService(){
         isTracking.postValue(false)
+        isTimerEnabled = false
     }
 
 
@@ -115,6 +166,12 @@ class TrackingService: LifecycleService() {
     //so Android doesn't recognise it
     @SuppressLint("MissingPermission")
     private fun updateLocationTracking(isTracking : Boolean){
+        val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        if(!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)){
+
+            Toast.makeText(this, "Please turn on location", Toast.LENGTH_SHORT).show()
+
+        }
         if(isTracking){
             if(TrackingUtility.hasLocationPermissions(this)){
                 val request = LocationRequest().apply{
@@ -141,6 +198,7 @@ class TrackingService: LifecycleService() {
             if(isTracking.value!!){
                 result?.locations?.let{ locations ->
                     for(location in locations){
+                        Timber.d("adding location")
                         addPathPoint(location)
                     }
                 }
@@ -148,21 +206,25 @@ class TrackingService: LifecycleService() {
         }
     }
 
+
     private fun addPathPoint(location: Location?){
         //We use let and apply here because location is nullable, so it only does the things inside the let
         //if it is not null
         location?.let {
+            Timber.d("Location not null")
             val pos = LatLng(location.latitude, location.longitude)
             pathPoints.value?.apply{
                 last().add(pos)
                 pathPoints.postValue(this)
             }
-        }
+        } ?: Timber.d("Location is null")
+
     }
 
 
+    //Only called on start, not resume
     private fun startForegroundService(){
-        addEmptyPolyline()
+        startTimer()
         isTracking.postValue(true)
         val notifManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 

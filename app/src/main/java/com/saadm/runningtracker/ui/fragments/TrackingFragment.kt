@@ -1,9 +1,13 @@
 package com.saadm.runningtracker.ui.fragments
 
+import android.content.Context
+import android.content.Context.LOCATION_SERVICE
 import android.content.Intent
+import android.location.LocationManager
 import android.opengl.Visibility
 import android.os.Bundle
 import android.view.View
+import androidx.core.content.ContextCompat.getSystemService
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Observer
@@ -16,12 +20,14 @@ import com.saadm.runningtracker.other.Constants.ACTION_START_OR_RESUME_SERVICE
 import com.saadm.runningtracker.other.Constants.MAP_ZOOM
 import com.saadm.runningtracker.other.Constants.POLYLINE_COLOR
 import com.saadm.runningtracker.other.Constants.POLYLINE_WIDTH
+import com.saadm.runningtracker.other.TrackingUtility
 import com.saadm.runningtracker.services.Polyline
 import com.saadm.runningtracker.services.Polylines
 import com.saadm.runningtracker.services.TrackingService
 import com.saadm.runningtracker.ui.viewmodels.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.android.synthetic.main.fragment_tracking.*
+import timber.log.Timber
 
 @AndroidEntryPoint
 class TrackingFragment: Fragment(R.layout.fragment_tracking) {
@@ -29,7 +35,8 @@ class TrackingFragment: Fragment(R.layout.fragment_tracking) {
 
     private var map: GoogleMap? = null
 
-    private var isTracking:Boolean = true
+    private var currenTimeInMillis: Long = 0L
+    private var isTracking:Boolean = false
     private var pathPoints = mutableListOf<Polyline>()
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -59,6 +66,12 @@ class TrackingFragment: Fragment(R.layout.fragment_tracking) {
             addLatestPolyline()
             moveCameraToUser()
         })
+
+        TrackingService.timeRunInMillis.observe(viewLifecycleOwner, Observer{
+            currenTimeInMillis = it
+            val formattedTime = TrackingUtility.getFormattedStopwatchTime(currenTimeInMillis, true)
+            tvTimer.text = formattedTime
+        })
     }
 
     private fun toggleRun(){
@@ -82,12 +95,15 @@ class TrackingFragment: Fragment(R.layout.fragment_tracking) {
 
     private fun moveCameraToUser(){
         if(pathPoints.isNotEmpty() && pathPoints.last().isNotEmpty()){
+            Timber.d("Here")
             map?.animateCamera(
                     CameraUpdateFactory.newLatLngZoom(
                             pathPoints.last().last(),
                             MAP_ZOOM
                     )
             )
+        } else{
+            Timber.d("Otherwise here")
         }
     }
     //In case activity was destroyed, we still have LiveData so its not a problem but we lose the drawing on the map
