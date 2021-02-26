@@ -38,18 +38,21 @@ import com.saadm.runningtracker.other.Constants.TIMER_UPDATE_INTERVAL
 import com.saadm.runningtracker.other.TrackingUtility
 import com.saadm.runningtracker.ui.MainActivity
 import com.saadm.runningtracker.ui.fragments.TrackingFragment
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import pub.devrel.easypermissions.EasyPermissions
 import timber.log.Timber
+import javax.inject.Inject
 
 //We use a list of lists, in case there is a break in tracking, we need to join the paths of coordinates
 //Each path is a list of coordinates, but for several paths, there will be a list of paths
 typealias Polyline = MutableList<LatLng>
 typealias Polylines = MutableList<Polyline>
 
+@AndroidEntryPoint
 class TrackingService: LifecycleService() {
 
     var isFirstRun: Boolean = true
@@ -59,7 +62,16 @@ class TrackingService: LifecycleService() {
     private var timeStarted:Long = 0L
     private var lastSecondTimeStamp: Long = 0L
 
+
+    //Dependencies come from ServiceModule
+    @Inject
     lateinit var fusedLocationProviderClient: FusedLocationProviderClient
+
+    @Inject
+    lateinit var baseNotificationBuilder: NotificationCompat.Builder
+
+    //To update notifications with buttons and time
+    lateinit var currentNotificationBuilder: NotificationCompat.Builder
 
     //This LiveData is only used by this class, so we don't need companion object
     private val timeRunInSeconds = MutableLiveData<Long>()
@@ -71,23 +83,27 @@ class TrackingService: LifecycleService() {
         val pathPoints = MutableLiveData<Polylines>()
     }
 
+
+    override fun onCreate() {
+        super.onCreate()
+        postInitialValues()
+        fusedLocationProviderClient = FusedLocationProviderClient(this)
+        currentNotificationBuilder = baseNotificationBuilder
+
+        //We can declare "this" as a lifecycle owner because we defined this service class as LifecycleService()
+        isTracking.observe(this, Observer {
+            updateLocationTracking(it)
+            updateNotificationTrackingState(it)
+        })
+    }
+
+
     //Provide initial, empty values for LiveData
     private fun postInitialValues(){
         isTracking.postValue(false)
         pathPoints.postValue(mutableListOf())
         timeRunInMillis.postValue(0L)
         timeRunInSeconds.postValue(0L)
-    }
-
-    override fun onCreate() {
-        super.onCreate()
-        postInitialValues()
-        fusedLocationProviderClient = FusedLocationProviderClient(this)
-
-        //We can declare "this" as a lifecycle owner because we defined this service class as LifecycleService()
-        isTracking.observe(this, Observer {
-            updateLocationTracking(it)
-        })
     }
 
 
@@ -161,6 +177,35 @@ class TrackingService: LifecycleService() {
     }
 
 
+    private fun updateNotificationTrackingState(isTracking: Boolean){
+        val notificationActionText = if(isTracking) "Pause" else "Resume"
+        val pendingIntent = if(isTracking) {
+            val pauseIntent = Intent(this, TrackingService::class.java).apply{
+                action = ACTION_PAUSE_SERVICE
+            }
+            PendingIntent.getService(this, 1, pauseIntent, FLAG_UPDATE_CURRENT)
+        } else{
+            val resumeIntent = Intent(this, TrackingService::class.java).apply{
+                action = ACTION_START_OR_RESUME_SERVICE
+            }
+            PendingIntent.getService(this, 2, resumeIntent, FLAG_UPDATE_CURRENT)
+        }
+
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        //Swap the current notification with a new one, don't just add more
+        currentNotificationBuilder.javaClass.getDeclaredField("mAction").apply{
+            isAccessible = true
+            //This clears the current notification
+            set(currentNotificationBuilder, ArrayList<NotificationCompat.Action>())
+        }
+
+        currentNotificationBuilder = baseNotificationBuilder
+                .addAction(R.drawable.ic_pause_black_24dp, notificationActionText, pendingIntent)
+        notificationManager.notify(NOTIFICATION_ID, currentNotificationBuilder.build())
+    }
+
+
     //We can suppress this warning, the warning is that we need to do a permission check
     //We do a permission check but we use EasyPermissions in our TrackingUtility,
     //so Android doesn't recognise it
@@ -231,15 +276,14 @@ class TrackingService: LifecycleService() {
         if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O){
             createNotificationChannel(notifManager)
         }
-        val notificationBuilder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-                .setAutoCancel(false)           //Notification doesn't disappear if user clicks it
-                .setOngoing(true)               //Notification cannot be swiped away
-                .setSmallIcon(R.drawable.ic_directions_run_black_24dp)
-                .setContentTitle("Running App")
-                .setContentText("00:00:00")
-                .setContentIntent(getMainActivityPendingIntent())
 
-        startForeground(NOTIFICATION_ID, notificationBuilder.build())
+        timeRunInSeconds.observe(this, Observer {
+            val notification = currentNotificationBuilder
+                    .setContentText(TrackingUtility.getFormattedStopwatchTime(it * 1000L))
+            notifManager.notify(NOTIFICATION_ID, notification.build())
+        })
+        //System function
+        startForeground(NOTIFICATION_ID, baseNotificationBuilder.build())
     }
 
 
@@ -251,16 +295,5 @@ class TrackingService: LifecycleService() {
                 IMPORTANCE_LOW
         )
         notifManager.createNotificationChannel(notifChannel)
-    }
-
-    private fun getMainActivityPendingIntent() : PendingIntent {
-        return PendingIntent.getActivity(
-                this,
-                0,
-                Intent(this, MainActivity::class.java).also {
-                    it.action = ACTION_SHOW_TRACKING_FRAGMENT
-                },
-                FLAG_UPDATE_CURRENT
-        )
     }
 }
