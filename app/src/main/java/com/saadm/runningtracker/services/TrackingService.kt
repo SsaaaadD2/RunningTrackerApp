@@ -56,6 +56,7 @@ typealias Polylines = MutableList<Polyline>
 class TrackingService: LifecycleService() {
 
     var isFirstRun: Boolean = true
+    var serviceKilled: Boolean = false
     private var isTimerEnabled: Boolean = false
     private var lapTime: Long = 0L  //If timer is paused and resumed, we start again from 0, we don't continue
     private var totalTimeRun: Long = 0L
@@ -107,6 +108,16 @@ class TrackingService: LifecycleService() {
     }
 
 
+    private fun killService(){
+        serviceKilled = true
+        isFirstRun = true
+        pauseService()
+        postInitialValues()
+        stopForeground(true)
+        stopSelf()
+    }
+
+
     //Called when an Intent is sent to this service
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 		//.let is usually used for value conversions
@@ -126,6 +137,7 @@ class TrackingService: LifecycleService() {
                 }
                 ACTION_STOP_SERVICE -> {
                     Timber.d("Stopped service")
+                    killService()
                 }
             }
         }
@@ -200,9 +212,15 @@ class TrackingService: LifecycleService() {
             set(currentNotificationBuilder, ArrayList<NotificationCompat.Action>())
         }
 
-        currentNotificationBuilder = baseNotificationBuilder
-                .addAction(R.drawable.ic_pause_black_24dp, notificationActionText, pendingIntent)
-        notificationManager.notify(NOTIFICATION_ID, currentNotificationBuilder.build())
+        //This function might get called one more time after the notification was removed, so there would still
+        //be a notification
+        if(!serviceKilled){
+            currentNotificationBuilder = baseNotificationBuilder
+                    .addAction(R.drawable.ic_pause_black_24dp, notificationActionText, pendingIntent)
+            notificationManager.notify(NOTIFICATION_ID, currentNotificationBuilder.build())
+        }
+
+
     }
 
 
@@ -277,10 +295,15 @@ class TrackingService: LifecycleService() {
             createNotificationChannel(notifManager)
         }
 
+        //This observer might get called one more time after the notification was removed, so there would still
+        //be a notification
         timeRunInSeconds.observe(this, Observer {
-            val notification = currentNotificationBuilder
-                    .setContentText(TrackingUtility.getFormattedStopwatchTime(it * 1000L))
-            notifManager.notify(NOTIFICATION_ID, notification.build())
+            if(!serviceKilled){
+                val notification = currentNotificationBuilder
+                        .setContentText(TrackingUtility.getFormattedStopwatchTime(it * 1000L))
+                notifManager.notify(NOTIFICATION_ID, notification.build())
+            }
+
         })
         //System function
         startForeground(NOTIFICATION_ID, baseNotificationBuilder.build())
