@@ -206,7 +206,7 @@ class TrackingService: LifecycleService() {
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         //Swap the current notification with a new one, don't just add more
-        currentNotificationBuilder.javaClass.getDeclaredField("mAction").apply{
+        currentNotificationBuilder.javaClass.getDeclaredField("mActions").apply{
             isAccessible = true
             //This clears the current notification
             set(currentNotificationBuilder, ArrayList<NotificationCompat.Action>())

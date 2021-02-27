@@ -118,7 +118,7 @@ class TrackingFragment: Fragment(R.layout.fragment_tracking) {
     private fun cancelRunAlertDialog(){
         val dialog = MaterialAlertDialogBuilder(requireContext(), R.style.AlertDialogTheme)
                 .setTitle("Cancel Run")
-                .setMessage("Are you sure you want to cancel your run?")
+                .setMessage("Are you sure you want to cancel your run? Your data will not be saved")
                 .setIcon(R.drawable.ic_delete)
                 .setPositiveButton("Yes"){ _,_ ->
                     stopRun()
