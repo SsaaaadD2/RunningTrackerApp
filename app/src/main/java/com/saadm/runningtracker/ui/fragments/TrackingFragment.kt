@@ -14,9 +14,12 @@ import androidx.lifecycle.Observer
 import androidx.navigation.fragment.findNavController
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
+import com.google.android.gms.maps.model.LatLngBounds
 import com.google.android.gms.maps.model.PolylineOptions
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.snackbar.Snackbar
 import com.saadm.runningtracker.R
+import com.saadm.runningtracker.db.Run
 import com.saadm.runningtracker.other.Constants.ACTION_PAUSE_SERVICE
 import com.saadm.runningtracker.other.Constants.ACTION_START_OR_RESUME_SERVICE
 import com.saadm.runningtracker.other.Constants.ACTION_STOP_SERVICE
@@ -31,16 +34,20 @@ import com.saadm.runningtracker.ui.viewmodels.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.android.synthetic.main.fragment_tracking.*
 import timber.log.Timber
+import java.util.*
+import kotlin.math.round
 
 @AndroidEntryPoint
 class TrackingFragment: Fragment(R.layout.fragment_tracking) {
-    private val ViewModel: MainViewModel by viewModels()
+    private val viewModel: MainViewModel by viewModels()
 
     private var map: GoogleMap? = null
 
     private var currenTimeInMillis: Long = 0L
     private var isTracking:Boolean = false
     private var pathPoints = mutableListOf<Polyline>()
+
+    private var weight = 100f
 
     private var menu: Menu? = null
 
@@ -56,6 +63,11 @@ class TrackingFragment: Fragment(R.layout.fragment_tracking) {
         btnToggleRun.setOnClickListener {
             toggleRun()
         }
+        btnFinishRun.setOnClickListener {
+            zoomToSeeWholeTrack()
+            endRunAndSave()
+        }
+
         mapView.onCreate(savedInstanceState)
         mapView.getMapAsync{
             map = it
@@ -130,11 +142,44 @@ class TrackingFragment: Fragment(R.layout.fragment_tracking) {
         dialog.show()
     }
 
+
+    //Cancelling or finishing the run
     private fun stopRun(){
         sendCommandToService(ACTION_STOP_SERVICE)
         findNavController().navigate(R.id.action_trackingFragment_to_runFragment)
     }
 
+
+    //Finish the run and save to database, take screenshot of map
+    private fun endRunAndSave(){
+        map?.snapshot { bmp ->
+            var distanceInMetres = 0
+            for(polyline in pathPoints){
+                distanceInMetres += TrackingUtility.calculatePolylineLength(polyline).toInt()
+            }
+
+            //In km/h so convert m to km and convert milliseconds to hours
+            //Single decimal place, so multiply by 10 to save first decimal, round it off to 0, then divide by 10
+            //to get the first decimal back
+            val avgSpeed = round((distanceInMetres / 1000f) / (currenTimeInMillis / 1000f / 3600) * 10) / 10f
+
+            //date is saved in millis in database
+            val dateTimeStamp = Calendar.getInstance().timeInMillis
+
+            val caloriesBurned = ((distanceInMetres / 1000f) * weight).toInt()
+
+            val run = Run(bmp, dateTimeStamp, avgSpeed, distanceInMetres, currenTimeInMillis, caloriesBurned)
+            viewModel.insertRun(run)
+            Snackbar.make(
+                    //When saving the run, we navigate back to RunFragment, so TrackingFragment has been removed
+                    //So we need the root view of the activity
+                    requireActivity().findViewById(R.id.rootView),
+                    "Run saved successfully",
+                    Snackbar.LENGTH_LONG
+            ).show()
+            stopRun()
+        }
+    }
 
 
     private fun updateTracking(isTracking: Boolean){
@@ -149,6 +194,8 @@ class TrackingFragment: Fragment(R.layout.fragment_tracking) {
         }
     }
 
+
+    //Make the camera follow the user on the map
     private fun moveCameraToUser(){
         if(pathPoints.isNotEmpty() && pathPoints.last().isNotEmpty()){
             Timber.d("Here")
@@ -162,6 +209,28 @@ class TrackingFragment: Fragment(R.layout.fragment_tracking) {
             Timber.d("Otherwise here")
         }
     }
+
+
+    //When we want to see the entire track we've run
+    private fun zoomToSeeWholeTrack(){
+        val bounds = LatLngBounds.Builder()
+        for(polyline in pathPoints){
+            //For each lat-long coordinate
+            for(pos in polyline){
+                bounds.include(pos)
+            }
+        }
+        map?.moveCamera(
+                CameraUpdateFactory.newLatLngBounds(
+                        bounds.build(),
+                        mapView.width,
+                        mapView.height,
+                        (mapView.height * 0.05).toInt()     //padding so the track is in the middle, not on boundary
+                )
+        )
+    }
+
+
     //In case activity was destroyed, we still have LiveData so its not a problem but we lose the drawing on the map
     //So we redraw on the map
     private fun addAllPolylines(){
