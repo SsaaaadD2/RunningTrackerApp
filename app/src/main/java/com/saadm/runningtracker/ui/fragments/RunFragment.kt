@@ -5,9 +5,13 @@ import android.os.Build
 import android.os.Bundle
 import android.view.View
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentPagerAdapter
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.Observer
 import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.saadm.runningtracker.R
+import com.saadm.runningtracker.adapers.RunAdapter
 import com.saadm.runningtracker.other.Constants.LOCATION_PERMISSION_REQUEST_CODE
 import com.saadm.runningtracker.other.TrackingUtility
 import com.saadm.runningtracker.ui.viewmodels.MainViewModel
@@ -20,17 +24,34 @@ import pub.devrel.easypermissions.EasyPermissions
 @AndroidEntryPoint
 class RunFragment: Fragment(R.layout.fragment_run), EasyPermissions.PermissionCallbacks {
 
-    private val ViewModel: MainViewModel by viewModels()
+    private val viewModel: MainViewModel by viewModels()
+
+    private lateinit var runAdapter: RunAdapter
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
         requestPermissions()
+        setupRecyclerView()
+
+        viewModel.runsSortedByDate.observe(viewLifecycleOwner, Observer {
+            runAdapter.submitList(it)
+        })
 
         fab.setOnClickListener {
             findNavController().navigate(R.id.action_runFragment_to_trackingFragment)
         }
     }
+
+
+    private fun setupRecyclerView(){
+        rvRuns.apply {
+            runAdapter = RunAdapter()
+            adapter = runAdapter
+            layoutManager = LinearLayoutManager(requireContext())
+        }
+    }
+
 
     //See if we have the required permissions, if not then request based on the Android version running
     private fun requestPermissions(){
