@@ -12,6 +12,7 @@ import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.BarDataSet
 import com.github.mikephil.charting.data.BarEntry
 import com.saadm.runningtracker.R
+import com.saadm.runningtracker.other.CustomMarkerView
 import com.saadm.runningtracker.other.TrackingUtility
 import com.saadm.runningtracker.ui.viewmodels.StatisticsViewModel
 import dagger.hilt.android.AndroidEntryPoint
@@ -27,6 +28,7 @@ class StatisticsFragment: Fragment(R.layout.fragment_statistics) {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         subscribeToObservers()
+        setupBarChart()
     }
 
 
@@ -103,6 +105,11 @@ class StatisticsFragment: Fragment(R.layout.fragment_statistics) {
                 }
 
                 barChart.data = BarData(bardataSet)
+
+                //Call our custom created MarkerView
+                //list of runs is sorted descending, so latest is first
+                //We want from oldest to latest so we reverse
+                barChart.marker = CustomMarkerView(it.reversed(), requireContext(), R.layout.marker_view)
 
                 //Update the barchart with our changes
                 barChart.invalidate()
