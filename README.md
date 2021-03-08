@@ -25,8 +25,12 @@ An Android app to track runs and stats such as distance, time, average speed and
 
 ## Demo:
 
+### Video on YouTube
+
 [Check out a demo of the app](https://youtu.be/3TwNaIDbF3o)
 
+
+### Gifs:
 
 ![Demo Gif 1](demo1.gif)
 
